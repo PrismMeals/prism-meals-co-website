@@ -1239,6 +1239,7 @@ window.PRISM_ASSETS = {"logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA4
   var current = 'home';
   var lastFocus = null;
   var busy = false;
+  var lastCheckoutError = '';
 
   function $(id){ return document.getElementById(id); }
   var fmt = new Intl.NumberFormat('en-CA', { style:'currency', currency:'CAD' });
@@ -1715,6 +1716,7 @@ window.PRISM_ASSETS = {"logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA4
       return r.json().then(function(d){ return { status: r.status, ok: r.ok, d: d }; }, function(){ return { status: r.status, ok: false, d: {} }; });
     }).then(function(res){
       if (res.ok && res.d && res.d.url) { window.location.href = res.d.url; return; }   // off to Stripe
+      lastCheckoutError = ((res.d && res.d.error) || 'error') + ' (HTTP ' + res.status + ')';
       busy = false; render();
       if (res.status === 409) {
         showError('Our prices have just been updated. Please reload the page and try again.');
@@ -1723,6 +1725,7 @@ window.PRISM_ASSETS = {"logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA4
       }
     }).catch(function(){
       clearTimeout(timer);
+      lastCheckoutError = 'could not reach the payment function';
       busy = false; render();
       fallbackToEmail(o, 'checkout');
     });
@@ -1873,6 +1876,7 @@ window.PRISM_ASSETS = {"logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA4
     });
     actions.appendChild(again);
     confirmBox.appendChild(actions);
+    if (failed === 'checkout' && lastCheckoutError) confirmBox.appendChild(mk('p', 'fine', 'Technical note for support: ' + lastCheckoutError + '.'));
     confirmBox.appendChild(mk('p', 'fine', 'Questions about your order? Email ' + S.email + '.'));
 
     if (mode === 'sent') { cart = {}; saveCart(); form.reset(); syncFulfill(); render(); }
