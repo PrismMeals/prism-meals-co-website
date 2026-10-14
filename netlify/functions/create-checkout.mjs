@@ -33,8 +33,9 @@ const DELIVERY_FEE_CENTS = 0;
 const FULFILLMENT = ['pickup', 'delivery'];
 
 const env = (k) => {
-  try { if (typeof Netlify !== 'undefined' && Netlify.env) { const v = Netlify.env.get(k); if (v) return v; } } catch (_) {}
-  return process.env[k];
+  try { if (typeof Netlify !== 'undefined' && Netlify.env) { const v = Netlify.env.get(k); if (v) return String(v).trim(); } } catch (_) {}
+  const v = process.env[k];
+  return typeof v === 'string' ? v.trim() : v;
 };
 
 const clean = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
@@ -70,8 +71,33 @@ export default async (req) => {
 
   const origin = req.headers.get('origin');
   const cors = corsHeaders(origin, allowed);
-  const reply = (status, body) =>
-    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...cors } });
+  const reply = (status, body) => {
+    if (status >= 400) console.error('create-checkout failed:', status, body && body.error);
+    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...cors } });
+  };
+
+  // Open  <your site>/.netlify/functions/create-checkout?check=1  in a browser to see if everything is set up.
+  let isCheck = false;
+  try { isCheck = req.method === 'GET' && new URL(req.url).searchParams.get('check') === '1'; } catch (_) {}
+  if (isCheck) {
+    const key = env('STRIPE_SECRET_KEY');
+    const out = {
+      stripeKeySet: !!key,
+      keyType: !key ? 'missing' : key.startsWith('sk_test_') ? 'test' : key.startsWith('sk_live_') ? 'live'
+        : key.startsWith('pk_') ? 'WRONG: this is the publishable key, use the secret key' : key.startsWith('rk_') ? 'restricted' : 'not recognised',
+      siteUrlSet: !!siteUrl,
+      siteUrl: siteUrl || null
+    };
+    if (key) {
+      try {
+        const r = await fetch('https://api.stripe.com/v1/balance', { headers: { Authorization: `Bearer ${key}` } });
+        out.stripeAcceptsKey = r.ok;
+        out.stripeStatus = r.status;
+      } catch (_) { out.stripeReachable = false; }
+    }
+    out.ready = out.stripeKeySet && out.siteUrlSet && out.stripeAcceptsKey === true;
+    return reply(200, out);
+  }
 
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   if (req.method !== 'POST') return reply(405, { error: 'method_not_allowed' });
